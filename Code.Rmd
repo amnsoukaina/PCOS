@@ -1,0 +1,66 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(EnhancedVolcano)
+
+results <- read.csv(file = 'DEGs_results_output.csv', row.names = 1) #change the name of the file. 
+
+EnhancedVolcano(results,
+    lab = rownames(results),
+    x = 'logFC',
+    y = 'P.Value',
+    xlim = c(-4, 4), #change the numbers if your logFC is less than 4 or -4
+    ylim = c(0, 9), # change the number 9 if your adj-Pvalue is very small
+    title = 'control versus PCOS DEGs',
+    pCutoff = 0.05,
+    FCcutoff = 0.5,
+    pointSize = 3.0,
+    labFace = 'bold')
+```
+
+
+```{r}
+# Load necessary library
+library(pheatmap)
+
+
+# Load the heatmap data
+data_pheatmap <- read.csv(file = 'data_pheatmap.csv', row.names = 1) #tha data contain only the name of samples (rows) and features - genes(columns)
+clinical_data_pheatmap <- read.csv(file = 'clinical_data_pheatmap.csv', row.names = 1) #the clinical data - (samples - rows) and factors (Control vs drug)(column)
+
+#makes sure the number of samples in the data aligns with the number of samples in clinical data
+
+# Load clinical data for annotations
+clinical_data_pheatmap$MMR.Status <- as.factor(clinical_data_pheatmap$MMR.Status) #change MMR.status based on your clinical data
+
+# This assumes that the samples in data_for_heatmap correspond to the rows in clinical_data
+ordered_columns <- order(clinical_data_pheatmap$MMR.Status) #change clinical data name and MMR.status based on your clinical data
+ordered_data_for_heatmap <- data_pheatmap[, rownames(clinical_data_pheatmap)[ordered_columns]] # same here for clinical data 
+
+# Prepare annotation data for columns based on the new order
+annotation_col <- data.frame(MMR.Status = clinical_data_pheatmap$MMR.Status[ordered_columns]) #same here same here
+rownames(annotation_col) <- rownames(clinical_data_pheatmap)[ordered_columns] #same here for clinical data
+
+# Generate a color palette for the annotation
+annotation_colors <- list(MMR.Status = c(dMMR = "blue", pMMR = "red")) #same here; change dMMR and pMMR with control vs drug
+
+# Create the heatmap with ordered data and annotation
+pheatmap(ordered_data_for_heatmap, 
+         color = colorRampPalette(c("navy", "white", "firebrick3"))(50), 
+         annotation_col = annotation_col,
+         annotation_colors = annotation_colors,
+         scale = "row", # Optional: scales rows to have zero mean and unit variance
+         cluster_rows = TRUE,  # To cluster rows based on similarity
+         cluster_cols = FALSE, # Disable column clustering to preserve 'control' and 'drug' order
+         show_rownames = TRUE, 
+         show_colnames = TRUE, 
+         legend = TRUE)
+
+```
+
+
+
+

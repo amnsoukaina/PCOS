@@ -1,0 +1,99 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+#PCA Plot
+# Load necessary libraries
+library(ggplot2)
+
+
+#data: rows are samples and columns should include genes and the CLass variable (PCOS vs Control)
+data <- read.csv(file = 'yourdata.csv', row.names = 1)
+
+data$Class <- as.factor(data$Class)
+
+features <- data[, -which(names(data) == "Class")]
+
+# Perform PCA
+pca_result <- prcomp(features, center = TRUE, scale. = TRUE)
+
+# Summarize PCA results
+summary(pca_result)
+
+# Plot PCA results
+
+library(mixOmics)
+
+# Assuming 'data' has samples as rows and features as columns, and 'MMR_status' as a factor
+plsda_result <- plsda(features, data$Class)
+
+# Plot the results
+plotIndiv(plsda_result, ind.names = FALSE, legend = TRUE, title = 'PLS-DA on PCOS vs. Control')
+```
+
+```{r}
+#Enrichment Analysis
+
+library(clusterProfiler)
+library(org.Hs.eg.db) # Assuming you're working with human genes
+
+# Example Entrez IDs
+data_DEGS <- read.csv(file = 'filtered_DEGs_file.csv')
+
+# Assuming gene identifiers are in the first column. Replace `V1`with the actual column name if different.
+gene_symbols  <- data_DEGS[,1] #Gene symbol should in the first column 
+
+# Convert gene symbols to Entrez IDs (adjust OrgDb if using a different organism)
+entrez_ids <- bitr(gene_symbols, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+
+ego_BP <- enrichGO(gene         = entrez_ids$ENTREZID,
+                OrgDb        = org.Hs.eg.db,
+                ont          = "BP", # Use "CC" or "MF" for Cellular Component or Molecular Function
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.2,
+                readable      = TRUE) # Set to FALSE if you want to keep original Entrez IDs
+
+
+ego_CC <- enrichGO(gene         = entrez_ids$ENTREZID,
+                OrgDb        = org.Hs.eg.db,
+                ont          = "CC", # Use "CC" or "MF" for Cellular Component or Molecular Function
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.2,
+                readable      = TRUE) # Set to FALSE if you want to keep original Entrez IDs
+
+ego_MF <- enrichGO(gene         = entrez_ids$ENTREZID,
+                OrgDb        = org.Hs.eg.db,
+                ont          = "MF", # Use "CC" or "MF" for Cellular Component or Molecular Function
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.05,
+                qvalueCutoff  = 0.2,
+                readable      = TRUE) # Set to FALSE if you want to keep original Entrez IDs
+
+
+# Visualize the results: dotplot
+dotplot(ego_BP) + ggplot2::ggtitle("GO - BP Enrichment Analysis")
+
+# Alternatively, use barplot or enrichMap for visualization
+barplot(ego_BP)
+
+# Visualize the results: dotplot
+dotplot(ego_CC) + ggplot2::ggtitle("GO - CC Enrichment Analysis")
+
+# Alternatively, use barplot or enrichMap for visualization
+barplot(ego_CC)
+
+# Visualize the results: dotplot
+dotplot(ego_MF) + ggplot2::ggtitle("GO - MF Enrichment Analysis")
+
+# Alternatively, use barplot or enrichMap for visualization
+barplot(ego_MF)
+```
+
+
+

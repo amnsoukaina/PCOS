@@ -1,0 +1,98 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# load counts table from GEO
+urld2 <- "https://www.ncbi.nlm.nih.gov/geo/download/?format=file&type=rnaseq_counts"
+path2 <- paste(urld2, "acc=GSE199225", "file=GSE199225_raw_counts_GRCh38.p13_NCBI.tsv.gz", sep="&");
+tbl2 <- as.matrix(data.table::fread(path2, header=T, colClasses="integer"), rownames="GeneID")
+```
+
+```{r}
+# load gene annotations 
+apath2 <- paste(urld2, "type=rnaseq_counts", "file=Human.GRCh38.p13.annot.tsv.gz", sep="&")
+annot2 <- data.table::fread(apath2, header=T, quote="", stringsAsFactors=F, data.table=F)
+rownames(annot2) <- annot2$GeneID
+```
+
+```{r}
+# sample selection
+gsms2 <- "0000000000XXXXXXXXXXXXXXX0000001111111111XXXXXXXXXXXXXXX11111"
+sml2 <- strsplit(gsms2, split="")[[1]]
+
+# filter out excluded samples (marked as "X")
+sel2 <- which(sml2 != "X")
+sml2 <- sml2[sel2]
+tbl2 <- tbl2[ ,sel2]
+```
+
+```{r}
+# group membership for samples
+gs2 <- factor(sml2)
+groups2 <- make.names(c("control","PCOS"))
+levels(gs2) <- groups2
+sample_info2 <- data.frame(Group = gs2, row.names = colnames(tbl2))
+```
+
+```{r}
+# pre-filter low count genes
+# keep genes with at least N counts > 10, where N = size of smallest group
+keep2 <- rowSums(tbl2 >= 10 ) >= min(table(gs2))
+tbl2 <- tbl2[keep2, ]
+```
+
+```{r}
+#   Differential expression analysis with DESeq2
+library(DESeq2)
+
+ds2 <- DESeqDataSetFromMatrix(countData=tbl2, colData=sample_info2, design= ~Group)
+
+ds2 <- DESeq(ds2, test="Wald", sfType="poscount")
+
+```
+
+```{r}
+# extract results for top genes table
+r2 <- results (ds2, contrast=c("Group", groups2[1], groups2[2]), alpha=0.05, pAdjustMethod ="fdr")
+
+tT2 <- r2[order(r2$padj),] 
+tT2 <- merge(as.data.frame(tT2), annot2, by=0, sort=F)
+
+tT2 <- subset(tT2, select=c("GeneID","padj","pvalue","lfcSE","stat","log2FoldChange","baseMean","Symbol","Description"))
+write.table(tT2, file=stdout(), row.names=F, sep="\t")
+write.csv(tT2, "results_of_DEGs_GSE199225_NoEPS.csv")
+```
+
+```{r}
+dat2 <- log10(counts(ds2, normalized = T) + 1) # extract normalized counts
+write.csv(dat2, "data_exprs_GSE199225_NoEPS.csv")
+```
+
+
+```{r}
+# UMAP plot (multi-dimensional scaling)
+library(umap)
+dat2 <- dat2[!duplicated(dat2), ] # first remove duplicates
+par(mar=c(3,3,2,6), xpd=TRUE, cex.main=1.5)
+ump2 <- umap(t(dat2), n_neighbors = 13, random_state = 123)
+plot(ump2$layout, main="UMAP plot, nbrs=13", xlab="", ylab="", col=gs2, pch=20, cex=1.5)
+legend("topright", inset=c(-0.15,0), legend=groups2, pch=20,
+       col=1:length(groups2), title="Group", pt.cex=1.5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

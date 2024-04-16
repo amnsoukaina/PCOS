@@ -1,0 +1,393 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+#To split data into training and validation set
+
+data_total<- read.csv(file = 'your merged data.csv', row.names = 1)
+
+complete_data  <-data_total[sample(nrow(data_total)),]
+
+#Divide the data into training and validation set
+
+library(caret)
+set.seed(123) # Ensure reproducibility
+
+# Create 10 folds. This will create a list where each element is a vector of row indices for the training set in each fold.
+folds <- createFolds(complete_data$YourClass, k = 10, list = TRUE, returnTrain = TRUE)
+
+# To see how to use these folds, let's loop through them and split the data into training and validation sets for each fold.
+for(i in 1:length(folds)) {
+  # Training data for the i-th fold
+  train_indices <- folds[[i]]
+  train_set <- complete_data[train_indices, ]
+  
+  # Validation data for the i-th fold. It's the set difference between all indices and the training indices.
+  validation_indices <- setdiff(1:nrow(complete_data), train_indices)
+  validation_set <- complete_data[validation_indices, ]
+  
+  # Print out the sizes of each set for verification
+  cat(sprintf("Fold %d: Training set has %d rows, Validation set has %d rows\n", i, nrow(train_set), nrow(validation_set)))
+}
+
+write.csv(train_set, "train_set.csv" )
+write.csv(validation_set, "validation_set.csv" )
+
+dim(train_set)
+train_set$YourClass
+dim(validation_set)
+validation_set$YourClass
+```
+
+
+```{r}
+train_set_data  <-train_set[sample(nrow(train_set)),]
+train_set_data$YourClass <- as.factor(train_set_data$YourClass )
+
+# Assuming 'data' is your DataFrame
+#features <- data_MMR_CRC[, -ncol(data_MMR_CRC)] # Remove the class column to get only the features
+#class <- data_MMR_CRC[, ncol(data_MMR_CRC)] # Get only the class column
+
+target_column_name <- "YourClass"
+target_column_index <- which(names(train_set_data) == target_column_name)
+
+# Splitting the data into x (features) and y (target variable)
+x1 <- train_set_data[, -target_column_index] # All columns except the target
+y1 <- train_set_data[, target_column_index]  # Only the target column
+
+# Apply upSample
+up_sampled <- upSample(x = x1, y = y1)
+
+# The `upSample` function returns a list with two elements: x and y.
+# `x` is a dataframe of the oversampled features, and `y` is the oversampled target variable.
+
+# Combine x and y back into a dataframe
+oversampled_data_train <- data.frame(up_sampled)
+
+# Check the first few rows of the balanced dataset
+head(oversampled_data_train)
+
+# Check the balance of the target variable after oversampling
+table(oversampled_data_train$Class)
+write.csv(oversampled_data_train, "oversampled_data_train.csv" )
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+
+# Assuming 'data' is your dataframe and it contains 'MMR_status' column
+# Let's first remove the MMR_status column to perform PCA on just the molecular features
+
+train_data <- read.csv(file = 'oversampled_data_train.csv', row.names = 1)
+
+train_data$Class <- as.factor(train_data$Class)
+
+features <- train_data[, -which(names(train_data) == "Class")]
+
+# Perform PCA
+pca_result <- prcomp(features, center = TRUE, scale. = TRUE)
+
+library(mixOmics)
+
+# Assuming 'data' has samples as rows and features as columns, and 'MMR_status' as a factor
+plsda_result <- plsda(features, train_data$Class)
+
+# Plot the results
+plotIndiv(plsda_result, ind.names = FALSE, legend = TRUE, title = 'PCA Training Set')
+```
+
+```{r}
+validation_set_data  <-validation_set[sample(nrow(validation_set)),]
+validation_set_data$YourClass <- as.factor(validation_set_data$YourClass )
+
+
+target_column_name_2 <- "YourClass"
+target_column_index_2 <- which(names(validation_set_data) == target_column_name_2)
+
+# Splitting the data into x (features) and y (target variable)
+x2 <- validation_set_data[, -target_column_index_2] # All columns except the target
+y2 <- validation_set_data[, target_column_index_2]  # Only the target column
+
+# Apply upSample
+up_sampled_2 <- upSample(x = x2, y = y2)
+
+# The `upSample` function returns a list with two elements: x and y.
+# `x` is a dataframe of the oversampled features, and `y` is the oversampled target variable.
+
+# Combine x and y back into a dataframe
+oversampled_data_validation <- data.frame(up_sampled_2)
+
+# Check the first few rows of the balanced dataset
+head(oversampled_data_validation)
+
+# Check the balance of the target variable after oversampling
+table(oversampled_data_validation$Class)
+write.csv(oversampled_data_validation, "oversampled_data_validation.csv" )
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+oversampled_data_validation <- read.csv(file = 'oversampled_data_validation.csv', row.names = 1)
+
+oversampled_data_validation$Class <- as.factor(oversampled_data_validation$Class)
+
+features1 <- oversampled_data_validation[, -which(names(oversampled_data_validation) == "Class")]
+
+# Perform PCA
+pca_result1 <- prcomp(features1, center = TRUE, scale. = TRUE)
+
+# Summarize PCA results
+summary(pca_result1)
+
+
+library(mixOmics)
+
+# Assuming 'data' has samples as rows and features as columns, and 'MMR_status' as a factor
+plsda_result1 <- plsda(features1, oversampled_data_validation$Class)
+
+# Plot the results
+plotIndiv(plsda_result1, ind.names = FALSE, legend = TRUE, title = 'PCA Validation Set')
+```
+
+```{r}
+library(glmnet)
+library(dplyr)
+library(caret)
+library(pls)
+
+#LASSO Model
+
+library(ggrepel)
+library(dplyr)
+
+# Loading the library
+train_data$Class <- as.factor(train_data$Class)
+nfolds = 10 # number of folds
+
+x_primary = model.matrix(Class~., train_data) # trim off the first column
+                                         # leaving only the predictors
+y_primary = train_data %>%
+  select(Class) %>%
+  unlist() %>%
+  as.numeric()
+
+
+library(ncvreg)
+#svg("lasso.coef_new.svg",width=10, height=10, pointsize=10)
+lasso_mod = glmnet(x_primary, 
+                   y_primary, 
+                   alpha = 1,
+                   nfolds =10)
+# Fit lasso model on training data
+bestlam = lasso_mod$lambda.min  # Select lamda that minimizes training MSE
+bestlam
+
+
+plot(lasso_mod)    # Draw plot of coefficients
+cv.fit1 <- cv.ncvreg(
+  X = x_primary, y = y_primary, penalty = "lasso")
+summary(cv.fit1)
+plot(cv.fit1)
+## Within cv.fit is the fitted lasso model (fit)
+## Within the fitted model is beta, a matrix of regression coefficients for each lambda
+## We want only the column of beta corresponding to the lambda that minimizes CV RSME
+all_coefs1 <- cv.fit1$fit$beta[,cv.fit1$fit$lambda == cv.fit1$lambda.min]
+all_coefs1[all_coefs1 != 0]
+write.csv(all_coefs1[all_coefs1 != 0], "lasso.coef.train_data.csv") 
+
+#Make sure to save the plots and take screenshot of the output you receive from LASSO
+```
+
+```{r}
+#VARSELRF
+library(varSelRF)
+library(randomForest)
+
+train_data$Class <- as.factor(train_data$Class)
+
+x <- train_data[, -which(names(train_data) == "Class")]
+Y <- train_data$Class
+
+set.seed(123) # For reproducibility
+
+varSelRFOut <- varSelRF(x,Y , c.sd = 1, mtryFactor = 1, ntree = 5000,
+         ntreeIterat = 2000, vars.drop.num = NULL, vars.drop.frac = 0.1,
+         whole.range = TRUE, recompute.var.imp = FALSE, verbose = FALSE,
+         returnFirstForest = TRUE, fitted.rf = NULL, keep.forest = FALSE)
+
+# varSelRFOut will contain the results, including:
+# - which variables were selected
+# - the importance of each variable
+# - the OOB error rate at each step of the selection process
+
+# To see the selected variable names
+print(varSelRFOut$selectedVars)
+
+# To plot the OOB error rate as variables are eliminated
+plot(varSelRFOut)
+
+varSelRF(x,Y)
+
+#save the plots and screenshot the results
+```
+
+```{r}
+#Perform PCA on the train data after using the genes identified by both the feature selection methods (the common genes)
+```
+
+
+```{r}
+# Run algorithms using 10-fold cross validation
+
+library(randomForest)
+library(randomForest)
+library(prediction)
+library(ROCR)
+library(pROC)
+require(party)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(varImp)
+# Run algorithms using 10-fold cross validation
+
+train_data <- read.csv(file = 'oversampled_data_train.csv', row.names = 1)
+
+validation_data <- read.csv(file = 'oversampled_data_validation.csv', row.names = 1)
+
+train_data$Class <- as.factor(train_data$Class)
+validation_data$Class <- as.factor(validation_data$Class)
+
+
+
+# Run algorithms using 10-fold cross validation
+control <- trainControl(method="cv", number=10)
+metric <- "Accuracy"
+
+library(randomForest)
+library(randomForest)
+library(prediction)
+library(ROCR)
+library(pROC)
+require(party)
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(varImp)
+
+
+#rf-other method
+x.cf_rf_lasso_weka <- randomForest(Class~ ., data=na.omit(train_data), cross=10)
+p1.x.cf1_rf_lasso_weka <- predict(x.cf_rf_lasso_weka, na.omit(train_data))
+confusionMatrix(p1.x.cf1_rf_lasso_weka, na.omit(train_data$Class))
+preds.x.cf_rf_lasso_weka_train <- prediction(as.numeric(p1.x.cf1_rf_lasso_weka), na.omit(train_data$Class))
+perf.x.cf_rf_lasso_weka_train <- performance(preds.x.cf_rf_lasso_weka_train,"tpr","fpr")
+
+p2.x.pred_rf_lasso_weka <- predict(x.cf_rf_lasso_weka, na.omit(validation_data), type = "response")
+confusionMatrix(p2.x.pred_rf_lasso_weka, na.omit(validation_data$Class))
+preds.x.cf_rf_lasso_weka <- prediction(as.numeric(p2.x.pred_rf_lasso_weka), na.omit(validation_data$Class))
+perf.x.cf_rf_lasso_weka_test <- performance(preds.x.cf_rf_lasso_weka,"tpr","fpr")
+performance(preds.x.cf_rf_lasso_weka,"auc")@y.values
+
+
+#SVM
+library(caret)
+require(e1071)
+x.cf_svm_lasso_weka <- svm(Class~., data = na.omit(train_data),type="C-classification",kernel="radial", trControl=control)
+p1.x.cf1_svm_lasso_weka <- predict(x.cf_svm_lasso_weka, na.omit(train_data), type="prob")
+confusionMatrix(p1.x.cf1_svm_lasso_weka, na.omit(train_data$Class))
+preds.x.cf_svm_lasso_weka_train <- prediction(as.numeric(p1.x.cf1_svm_lasso_weka), na.omit(train_data$Class))
+perf.x.cf_svm_lasso_weka_train <- performance(preds.x.cf_svm_lasso_weka_train,"tpr","fpr")
+
+p2.x.pred_svm_lasso_weka <- predict(x.cf_svm_lasso_weka,  na.omit(validation_data), type="prob")
+confusionMatrix(p2.x.pred_svm_lasso_weka, na.omit(validation_data$Class))
+preds.x.cf_svm_lasso_weka <- prediction(as.numeric(p2.x.pred_svm_lasso_weka), na.omit(validation_data$Class))
+perf.x.cf_svm_lasso_weka <- performance(preds.x.cf_svm_lasso_weka,"tpr","fpr")
+performance(preds.x.cf_svm_lasso_weka,"auc")@y.values
+
+
+#KNN
+trControl2 <- trainControl(method = "repeatedcv",
+                          number = 10,
+                          repeats = 3)
+
+x.cf_knn_lasso_weka <- train(Class~., data=na.omit(train_data), method="knn", trControl=trControl2)
+p1.x.cf1_knn_lasso_weka <- predict(x.cf_knn_lasso_weka, na.omit(train_data), type="raw")
+confusionMatrix(p1.x.cf1_knn_lasso_weka, train_data$Class)
+preds.x.cf_knn_lasso_weka_train <- prediction(as.numeric(p1.x.cf1_knn_lasso_weka), na.omit(train_data$Class))
+perf.x.cf_knn_lasso_weka_train <- performance(preds.x.cf_knn_lasso_weka_train,"tpr","fpr")
+
+p2.x.pred_knn_lasso_weka <- predict(x.cf_knn_lasso_weka,  na.omit(validation_data), type="raw")
+confusionMatrix(p2.x.pred_knn_lasso_weka, na.omit(validation_data$Class))
+preds.x.cf_knn_lasso_weka <- prediction(as.numeric(p2.x.pred_knn_lasso_weka), na.omit(validation_data$Class))
+perf.knn<- performance(preds.x.cf_knn_lasso_weka,"tpr","fpr")
+performance(preds.x.cf_knn_lasso_weka,"auc")@y.values
+```
+
+
+
+```{r}
+library(pROC)
+
+#ROC CURVE based on the machine learning data
+#rf_train
+plot(perf.x.cf_rf_lasso_weka_train, main = "ROC Curve for RF, SVM, and KNN Train Model", col=4, lwd =2)
+grid()
+legend(0.6, 0.6, c('RF', 'SVM', 'KNN'), 4:6)
+legend("bottomright", legend = paste("AUC_RF =", round(performance(preds.x.cf_rf_lasso_weka_train, "auc")@y.values[[1]], 2), "AUC_SVM =", round(performance(preds.x.cf_svm_lasso_weka_train, "auc")@y.values[[1]], 2), "AUC_KNN =", round(performance(preds.x.cf_knn_lasso_weka_train, "auc")@y.values[[1]], 2))) 
+
+#SVM_train
+plot(perf.x.cf_svm_lasso_weka_train, col=5, lwd =2, add = TRUE)
+
+#KNN_train
+plot(perf.x.cf_knn_lasso_weka_train, col=6, lwd =2, add = TRUE)
+
+
+#rf_test
+
+plot(perf.x.cf_rf_lasso_weka_test, main = "ROC Curve for RF, SVM, and KNN test Model", col=4, lwd =2)
+grid()
+legend(0.6, 0.6, c('RF', 'SVM', 'KNN'), 4:6)
+legend("bottomright", legend = paste("AUC_RF =", round(performance(preds.x.cf_rf_lasso_weka, "auc")@y.values[[1]], 2), "AUC_SVM =", round(performance(preds.x.cf_svm_lasso_weka, "auc")@y.values[[1]], 2), "AUC_KNN =", round(performance(preds.x.cf_knn_lasso_weka, "auc")@y.values[[1]], 2))) 
+
+#svm_test
+plot(perf.x.cf_svm_lasso_weka, col=5, lwd =2, add = TRUE)
+
+#knn_test
+plot(perf.knn, col=6, lwd =2, add = TRUE)
+```
+
+```{r}
+
+#You can also validate the results using a normal statistical analysis Wilcoxon test
+#  Add p-value
+p + stat_compare_means()
+# Change method
+p + stat_compare_means(method = "wilcox.test")
+
+
+
+#Train
+train_data <- read.csv(file = 'Your_Train data.csv', row.names = 1)
+wilcox.test(train_data$Gene ~ Class, data = train_data)
+pairwise.wilcox.test(train_data$Gene, train_data$Class)
+
+library(ggpubr)
+library(ggplot2)
+
+p1 <- ggboxplot(Train_data, x = "Class", y = "Gene", palette = "jco", add = "jitter") +  labs(x="Class", y="Gene Name") + geom_boxplot(aes(fill = Class), show.legend = TRUE)
+#  Add p-value
+p1 + stat_compare_means()
+# Change method
+p1 + stat_compare_means(method = "wilcox.test")
+
+```
+
+
+
+

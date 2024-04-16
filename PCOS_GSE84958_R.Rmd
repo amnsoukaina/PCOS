@@ -1,0 +1,47 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+# load counts table from GEO
+urld4 <- "https://www.ncbi.nlm.nih.gov/geo/download/?format=file&type=rnaseq_counts"
+path4 <- paste(urld4, "acc=GSE84958", "file=GSE84958_raw_counts_GRCh38.p13_NCBI.tsv.gz", sep="&");
+tbl4 <- as.matrix(data.table::fread(path4, header=T, colClasses="integer"), rownames="GeneID")
+```
+```{r}
+# load gene annotations 
+apath4 <- paste(urld4, "type=rnaseq_counts", "file=Human.GRCh38.p13.annot.tsv.gz", sep="&")
+annot4 <- data.table::fread(apath4, header=T, quote="", stringsAsFactors=F, data.table=F)
+rownames(annot4) <- annot4$GeneID
+```
+
+```{r}
+# sample selection
+gsms4 <- "0000000000000000000000111111111111111XXXXXXXXXXXXXXX"
+sml4 <- strsplit(gsms4, split="")[[1]]
+
+# filter out excluded samples (marked as "X")
+sel4 <- which(sml4 != "X")
+sml4 <- sml4[sel4]
+tbl4 <- tbl4[ ,sel4]
+```
+
+```{r}
+# group membership for samples
+gs <- factor(sml)
+groups <- make.names(c("control","PCOS"))
+levels(gs) <- groups
+sample_info <- data.frame(Group = gs, row.names = colnames(tbl))
+
+# pre-filter low count genes
+# keep genes with at least N counts > 10, where N = size of smallest group
+keep <- rowSums( tbl >= 10 ) >= min(table(gs))
+tbl <- tbl[keep, ]
+```
+
+
+
+
+
+
